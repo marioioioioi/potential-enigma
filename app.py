@@ -1,77 +1,76 @@
 import streamlit as st
-import yt_dlp
-import os
+import requests
 import re
-import shutil
 
-st.set_page_config(page_title="Rádio Hub v2026", page_icon="📻")
+st.set_page_config(page_title="Rádio Hub - Emergência", page_icon="📻")
 
-def limpar_nome(nome):
-    return re.sub(r'[\\/*?:"<>|]', "", nome)
-
-# --- SISTEMA DE SENHA ---
+# --- LOGIN ---
 if "autenticado" not in st.session_state:
     st.session_state.autenticado = False
 
 if not st.session_state.autenticado:
-    st.title("🔒 Acesso Rádio")
-    senha = st.text_input("Senha:", type="password")
-    if st.button("Entrar"):
-        if senha == "radio123":
-            st.session_state.autenticado = True
-            st.rerun()
+    senha = st.text_input("Senha da Rádio:", type="password")
+    if senha == "radio123":
+        st.session_state.autenticado = True
+        st.rerun()
     st.stop()
 
-st.title("📻 Rádio Hub - Sistema Anti-Bloqueio")
+st.title("📻 Rádio Hub (Rota Alternativa)")
+st.warning("O YouTube bloqueou o servidor principal. Usando rota de emergência via instâncias Invidious.")
 
-# Verifica se o arquivo de cookies está presente
-if os.path.exists("cookies.txt"):
-    st.success("✅ Cookies carregados! O YouTube não vai bloquear.")
-else:
-    st.warning("⚠️ cookies.txt não encontrado. O erro 403 pode ocorrer.")
+link_yt = st.text_input("Cole o link do YouTube:")
 
-link = st.text_input("Cole o link do YouTube:", placeholder="https://www.youtube.com/watch?v=...")
+if st.button("Obter Áudio"):
+    if "v=" in link_yt:
+        video_id = link_yt.split("v=")[1].split("&")[0]
+    elif "be/" in link_yt:
+        video_id = link_yt.split("be/")[1].split("?")[0]
+    else:
+        st.error("Link inválido!")
+        st.stop()
 
-if st.button("Gerar MP3 de 320kbps"):
-    if link:
-        # Limpeza de segurança
-        if os.path.exists("downloads"):
-            shutil.rmtree("downloads")
-        os.makedirs("downloads")
+    with st.spinner("Buscando servidor disponível..."):
+        try:
+            # Lista de instâncias públicas do Invidious (se uma falhar, tentamos outra)
+            instancias = [
+                "https://invidious.snopyta.org",
+                "https://yewtu.be",
+                "https://invidious.kavin.rocks",
+                "https://inv.riverside.rocks"
+            ]
+            
+            sucesso = False
+            for instancia in instancias:
+                api_url = f"{instancia}/api/v1/videos/{video_id}"
+                res = requests.get(api_url, timeout=10)
+                
+                if res.status_code == 200:
+                    data = res.json()
+                    # Filtra apenas formatos de áudio
+                    audio_streams = [f for f in data['adaptiveFormats'] if 'audio' in f['type']]
+                    if audio_streams:
+                        # Pega o áudio de melhor qualidade
+                        audio_url = audio_streams[0]['url']
+                        titulo = data['title']
+                        
+                        st.success(f"✅ Encontrado: {titulo}")
+                        
+                        # Botão de download fazendo o túnel do áudio
+                        audio_bytes = requests.get(audio_url).content
+                        st.download_button(
+                            label="📥 BAIXAR MP3",
+                            data=audio_bytes,
+                            file_name=f"{titulo}.mp3",
+                            mime="audio/mpeg"
+                        )
+                        sucesso = True
+                        break
+            
+            if not sucesso:
+                st.error("Nenhum servidor alternativo respondeu. O YouTube está apertando o cerco hoje.")
+                
+        except Exception as e:
+            st.error(f"Erro na rota alternativa: {e}")
 
-        with st.spinner("Autenticando e extraindo áudio..."):
-            try:
-                ydl_opts = {
-                    'format': 'bestaudio/best',
-                    'cookiefile': 'cookies.txt' if os.path.exists('cookies.txt') else None,
-                    'postprocessors': [{
-                        'key': 'FFmpegExtractAudio',
-                        'preferredcodec': 'mp3',
-                        'preferredquality': '320',
-                    }],
-                    'outtmpl': 'downloads/%(uploader)s - %(title)s.%(ext)s',
-                    'quiet': False,
-                    'nocheckcertificate': True,
-                }
-
-                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                    info = ydl.extract_info(link, download=True)
-                    # Resolve o caminho do arquivo final pós-conversão
-                    temp_path = ydl.prepare_filename(info)
-                    mp3_path = os.path.splitext(temp_path)[0] + ".mp3"
-                    
-                    if os.path.exists(mp3_path):
-                        with open(mp3_path, "rb") as f:
-                            nome_final = os.path.basename(mp3_path)
-                            st.success(f"🎵 {nome_final} pronta!")
-                            st.download_button(
-                                label="📥 SALVAR NO PC DA RÁDIO",
-                                data=f,
-                                file_name=nome_final,
-                                mime="audio/mpeg"
-                            )
-                    else:
-                        st.error("Erro ao converter para MP3.")
-
-            except Exception as e:
-                st.error(f"Erro Crítico: {e}")
+st.divider()
+st.caption("Nota: Esta rota pode ser mais lenta que o normal.")
