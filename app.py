@@ -1,47 +1,56 @@
 import streamlit as st
 import yt_dlp
+import requests
 import re
 
-st.set_page_config(page_title="Rádio Hub - Bypass", page_icon="📻")
+st.set_page_config(page_title="Rádio Hub - Auto Rename", page_icon="📻")
 
 def limpar_nome(nome):
+    # Remove caracteres que o Windows proíbe em nomes de arquivos
     return re.sub(r'[\\/*?:"<>|]', "", nome)
 
-st.title("📻 Rádio Hub - Sistema Anti-Bloqueio")
-st.markdown("Como o YouTube bloqueou o servidor, os links abaixo abrirão o áudio direto no seu navegador.")
+st.title("📻 Rádio Hub - Download Automático")
+st.markdown("Os arquivos serão baixados já com o nome correto do YouTube.")
 
-links_input = st.text_area("Cole os links (um por linha):", height=150, placeholder="https://youtube.com/...")
+links_input = st.text_area("Cole os links (um por linha):", height=150)
 
-if st.button("🚀 Gerar Links de Áudio"):
+if st.button("🚀 Gerar Downloads com Nome Real"):
     links = [l.strip() for l in links_input.split('\n') if l.strip()]
     
     if not links:
         st.warning("Cole os links primeiro!")
     else:
         for idx, link in enumerate(links):
-            try:
-                # O servidor apenas lê o título e o link direto (sem baixar os bytes)
-                ydl_opts = {'format': 'bestaudio/best', 'quiet': True}
-                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                    info = ydl.extract_info(link, download=False)
-                    audio_url = info['url']
-                    artista = limpar_nome(info.get('uploader', 'Artista')).replace(' - Topic', '')
-                    titulo = limpar_nome(info.get('title', 'Musica'))
-                    nome_f = f"{artista} - {titulo}.mp3"
-                    
-                    with st.container():
-                        st.write(f"🎵 **{nome_f}**")
-                        # Botão HTML que manda o link direto para o seu IP pessoal baixar
-                        st.markdown(f'''
-                            <a href="{audio_url}" target="_blank" style="text-decoration:none;">
-                                <button style="width:100%; background-color:#28a745; color:white; border:none; padding:10px; border-radius:5px; cursor:pointer; font-weight:bold;">
-                                    📥 Abrir Áudio / Baixar
-                                </button>
-                            </a>
-                        ''', unsafe_allow_html=True)
-                        st.caption("Dica: Se abrir uma tela preta tocando a música, clique nos 3 pontinhos e escolha 'Fazer download'.")
-                        st.divider()
-            except Exception as e:
-                st.error(f"Erro no link {idx+1}: Link inválido ou restrito.")
-
-st.info("💡 Se baixar como 'videoplayback', basta renomear o arquivo no seu computador para o nome da música.")
+            with st.container():
+                try:
+                    # 1. Extrair metadados e link direto
+                    ydl_opts = {'format': 'bestaudio/best', 'quiet': True}
+                    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                        info = ydl.extract_info(link, download=False)
+                        audio_url = info['url']
+                        
+                        # Captura Artista e Título
+                        artista = info.get('uploader', 'Artista').replace(' - Topic', '')
+                        titulo = info.get('title', 'Musica')
+                        nome_final = limpar_nome(f"{artista} - {titulo}.mp3")
+                        
+                    with st.spinner(f"Preparando: {nome_final}"):
+                        # 2. O Servidor baixa o conteúdo para a memória
+                        # Usamos um User-Agent para tentar enganar o bloqueio 403
+                        headers = {
+                            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+                        }
+                        response = requests.get(audio_url, headers=headers, timeout=60)
+                        
+                        if response.status_code == 200:
+                            st.write(f"✅ **{nome_final}**")
+                            # 3. O download_button FORÇA o nome do arquivo no seu PC
+                            st.download_button(
+                                label=f"📥 Baixar MP3",
+                                data=response.content,
+                                file_name=nome_final,
+                                mime="audio/mpeg",
+                                key=f"dl_{idx}"
+                            )
+                        else:
+                            st.error(f"Erro
