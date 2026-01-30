@@ -2,8 +2,9 @@ import streamlit as st
 import yt_dlp
 import os
 import re
+import shutil
 
-st.set_page_config(page_title="Rádio Hub v16.0", page_icon="📻")
+st.set_page_config(page_title="Rádio Hub 2026", page_icon="📻")
 
 def limpar_nome(nome):
     return re.sub(r'[\\/*?:"<>|]', "", nome)
@@ -16,24 +17,24 @@ if not st.session_state.autenticado:
     st.title("📻 Acesso Rádio")
     senha = st.text_input("Senha:", type="password")
     if st.button("Entrar"):
-        if senha == "difusora":
+        if senha == "radio123":
             st.session_state.autenticado = True
             st.rerun()
     st.stop()
 
-st.title("📻 Rádio Hub - Download Real")
+st.title("📻 Rádio Hub - Sistema Anti-Bloqueio")
 
-link = st.text_input("Cole o link do YouTube:")
+link = st.text_input("Cole o link do YouTube:", placeholder="https://www.youtube.com/watch?v=...")
 
-if st.button("Preparar Download"):
+if st.button("Gerar MP3 de 320kbps"):
     if link:
-        with st.spinner("Baixando e convertendo... Isso pode levar alguns segundos."):
-            try:
-                # Pasta temporária para o download
-                if not os.path.exists("downloads"):
-                    os.makedirs("downloads")
+        # Limpar pasta de downloads antigos para não dar erro de permissão
+        if os.path.exists("downloads"):
+            shutil.rmtree("downloads")
+        os.makedirs("downloads")
 
-                # Configuração para download REAL no servidor
+        with st.spinner("Burlando bloqueios e processando áudio..."):
+            try:
                 ydl_opts = {
                     'format': 'bestaudio/best',
                     'postprocessors': [{
@@ -42,30 +43,32 @@ if st.button("Preparar Download"):
                         'preferredquality': '320',
                     }],
                     'outtmpl': 'downloads/%(uploader)s - %(title)s.%(ext)s',
-                    'quiet': True,
+                    'quiet': False,
+                    'no_warnings': False,
+                    'nocheckcertificate': True,
+                    'rm_cachedir': True, # Limpa o cache para evitar o erro 403
                 }
 
                 with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                    # O segredo: o yt-dlp vai detectar o Node.js do packages.txt automaticamente
                     info = ydl.extract_info(link, download=True)
-                    # O yt-dlp nos dá o caminho exato do arquivo gerado
-                    caminho_arquivo = ydl.prepare_filename(info).replace(".webm", ".mp3").replace(".m4a", ".mp3")
+                    # Resolve o nome do arquivo final
+                    file_path = ydl.prepare_filename(info)
+                    base, ext = os.path.splitext(file_path)
+                    mp3_path = base + ".mp3"
                     
-                    if os.path.exists(caminho_arquivo):
-                        with open(caminho_arquivo, "rb") as f:
-                            bytes_musica = f.read()
-                            nome_exibicao = os.path.basename(caminho_arquivo)
-                            
-                            st.success(f"✅ Pronto: {nome_exibicao}")
+                    if os.path.exists(mp3_path):
+                        with open(mp3_path, "rb") as f:
+                            st.success(f"✅ Sucesso: {os.path.basename(mp3_path)}")
                             st.download_button(
-                                label="📥 SALVAR MP3 NO COMPUTADOR",
-                                data=bytes_musica,
-                                file_name=nome_exibicao,
+                                label="📥 BAIXAR AGORA (320kbps)",
+                                data=f,
+                                file_name=os.path.basename(mp3_path),
                                 mime="audio/mpeg"
                             )
-                        # Limpa o arquivo do servidor para não encher o disco
-                        os.remove(caminho_arquivo)
                     else:
-                        st.error("Erro: Arquivo não foi gerado corretamente.")
+                        st.error("Ocorreu um erro na conversão para MP3.")
 
             except Exception as e:
-                st.error(f"Erro no processamento: {e}")
+                st.error(f"Erro Crítico: {e}")
+                st.info("Dica: Tente atualizar o link ou verifique se o vídeo não tem restrição de idade.")
