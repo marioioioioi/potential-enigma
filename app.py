@@ -3,7 +3,6 @@ import yt_dlp
 import os
 import subprocess
 import re
-import requests
 
 st.set_page_config(page_title="Rádio Hub Premium", page_icon="📻")
 
@@ -31,31 +30,39 @@ with aba1:
                     st.markdown(f"**Nome sugerido:** `{nome_sugerido}.mp3`")
                     st.write("Se o arquivo baixar como `.weba`, use a aba ao lado para converter.")
                     
-                    # Link direto para o navegador baixar (foge do erro 403 do servidor)
-                    st.markdown(f'<a href="{audio_url}" target="_blank" style="text-decoration:none;"><button style="background-color:#ff4b4b; color:white; border:none; padding:10px 20px; border_radius:5px; cursor:pointer;">📥 Baixar Arquivo Original</button></a>', unsafe_allow_html=True)
+                    st.markdown(f'''
+                        <a href="{audio_url}" target="_blank" style="text-decoration:none;">
+                            <button style="background-color:#ff4b4b; color:white; border:none; padding:10px 20px; border-radius:5px; cursor:pointer; font-weight:bold;">
+                                📥 Baixar Arquivo Original
+                            </button>
+                        </a>
+                    ''', unsafe_allow_html=True)
             except Exception as e:
                 st.error(f"Erro no YouTube: {e}")
 
-# --- ABA 2: CONVERSOR (O PULO DO GATO) ---
+# --- ABA 2: CONVERSOR (CORRIGIDO) ---
 with aba2:
     st.header("Conversor para MP3 (320kbps)")
     st.write("O arquivo veio em `.weba` ou sem nome? Jogue ele aqui.")
     
-    arquivo_subido = st.file_uploader("Arraste o arquivo aqui", type=["weba", "webm", "m4a"], key="uploader")
+    arquivo_subido = st.file_uploader("Arraste o arquivo aqui", type=["weba", "webm", "m4a", "opus"], key="uploader")
     
     if arquivo_subido:
-        nome_base = limpar_nome(arquivo_subido.name.rsplit('.', 1)[0])
+        # Pega o nome do arquivo e remove a extensão original
+        nome_base = limpar_nome(os.path.splitext(arquivo_subido.name)[0])
         
         if st.button("Converter Agora"):
             with st.spinner("Transformando em MP3 Real..."):
                 temp_in = "entrada_audio"
                 temp_out = f"{nome_base}.mp3"
                 
+                # Salva o arquivo enviado pelo usuário
                 with open(temp_in, "wb") as f:
                     f.write(arquivo_subido.getbuffer())
                 
                 try:
-                    # Comando FFmpeg para converter em 320kbps
+                    # Executa o FFmpeg do packages.txt
+                    # -i (input) | -ab (bitrate) | -y (overwrite)
                     subprocess.run([
                         'ffmpeg', '-i', temp_in, 
                         '-vn', '-ab', '320k', '-ar', '44100', '-y', temp_out
@@ -69,7 +76,11 @@ with aba2:
                             file_name=f"{nome_base}.mp3",
                             mime="audio/mpeg"
                         )
-                    os.remove(temp_in)
-                    os.remove(temp_output)
+                    
+                    # Limpeza das variáveis corretas agora!
+                    if os.path.exists(temp_in): os.remove(temp_in)
+                    if os.path.exists(temp_out): os.remove(temp_out)
+                    
                 except Exception as e:
-                    st.error(f"Erro no FFmpeg: {e}. Verifique se o packages.txt tem 'ffmpeg'.")
+                    st.error(f"Erro no FFmpeg: {e}")
+                    if os.path.exists(temp_in): os.remove(temp_in)
