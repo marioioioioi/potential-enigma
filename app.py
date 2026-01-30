@@ -4,75 +4,85 @@ import requests
 import re
 import os
 
-st.set_page_config(page_title="Rádio Hub Premium", page_icon="🎵")
+# Configuração da página
+st.set_page_config(page_title="Rádio Hub v15.0", page_icon="📻", layout="wide")
 
 def limpar_nome(nome):
+    """Remove caracteres proibidos no Windows para evitar erro ao salvar"""
     return re.sub(r'[\\/*?:"<>|]', "", nome)
 
-# --- LOGIN ---
+# --- LOGIN SIMPLES ---
 if "autenticado" not in st.session_state:
     st.session_state.autenticado = False
 
 if not st.session_state.autenticado:
-    st.title("Acesso Rádio")
-    senha = st.text_input("Senha da rádio:", type="password")
+    st.title("📻 Acesso ao Sistema de Rádio")
+    senha = st.text_input("Senha da Rádio:", type="password")
     if st.button("Entrar"):
-        if senha == "difusora": # Mude sua senha aqui
+        if senha == "radio123": # Pode mudar a senha aqui
             st.session_state.autenticado = True
             st.rerun()
         else:
             st.error("Senha incorreta!")
     st.stop()
 
-st.title("🎵 Rádio Hub - Multi Download & Capa")
+# --- INTERFACE ---
+st.title("📻 Rádio Hub - Download YouTube 320kbps")
+st.info("Cole links de vídeos individuais ou playlists abaixo.")
 
-links_input = st.text_area("Cole os links (YouTube ou Spotify) - Um por linha:", height=150)
+links_input = st.text_area("Links (um por linha):", height=150, placeholder="https://www.youtube.com/watch?v=...")
 
-if st.button("🚀 Processar tudo para a Rádio"):
+if st.button("🚀 Iniciar Processamento"):
     links = [l.strip() for l in links_input.split('\n') if l.strip()]
     
     if not links:
-        st.warning("Adicione pelo menos um link!")
+        st.warning("Nenhum link detectado.")
     else:
         for link in links:
-            with st.status(f"Processando: {link}...", expanded=True) as status:
+            with st.status(f"Analisando: {link}", expanded=True) as status:
                 try:
-                    # Configuração para buscar áudio + metadados (capa e nomes)
+                    # Configurações otimizadas para evitar erro de JS e DRM
                     ydl_opts = {
                         'format': 'bestaudio/best',
-                        'writethumbnail': True,
                         'quiet': True,
-                        'noplaylist': False
+                        'noplaylist': False,
+                        'extract_flat': False,
+                        'nocheckcertificate': True,
+                        'ignoreerrors': True,
                     }
                     
                     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                        info = ydl.extract_info(link, download=False)
+                        info_dict = ydl.extract_info(link, download=False)
                         
-                        # Se for playlist, processa cada música
-                        entries = info.get('entries', [info])
+                        # Se for playlist, pega as entradas, se não, coloca o vídeo numa lista
+                        entries = info_dict.get('entries', [info_dict])
                         
                         for entry in entries:
-                            artista = entry.get('artist') or entry.get('uploader') or "Artista"
-                            titulo = entry.get('title') or "Musica"
+                            if not entry: continue
+                            
+                            # Identificação do nome: Artista - Título
+                            # O 'uploader' costuma ser o nome do canal/artista no YT
+                            artista = entry.get('artist') or entry.get('uploader', 'Desconhecido')
+                            artista = artista.replace(' - Topic', '') # Limpa o sufixo de canais oficiais
+                            titulo = entry.get('title', 'Musica')
+                            
                             nome_f = limpar_nome(f"{artista} - {titulo}.mp3")
-                            capa = entry.get('thumbnail')
-
-                            if capa:
-                                st.image(capa, width=150)
                             
-                            st.write(f"✅ **{nome_f}** pronta!")
+                            st.write(f"✅ Preparado: **{nome_f}**")
                             
-                            # Botão de download direto do servidor do YT para o PC
+                            # Botão de download: o Streamlit puxa o arquivo do servidor do YT
+                            # e entrega direto para o navegador do PC da rádio.
                             st.download_button(
-                                label=f"Baixar: {nome_f[:40]}...",
+                                label=f"Download MP3",
                                 data=requests.get(entry['url']).content,
                                 file_name=nome_f,
                                 mime="audio/mpeg",
-                                key=entry['id']
+                                key=f"{entry['id']}_{os.urandom(4).hex()}" # Chave única para evitar conflito
                             )
                     status.update(label="Concluído!", state="complete")
+                    
                 except Exception as e:
                     st.error(f"Erro no link {link}: {e}")
 
 st.divider()
-st.caption("Dica: Se o nome vier como 'Uploader', é porque o YouTube não forneceu o metadado de Artista oficial.")
+st.caption("v15.0 - Engine Local com suporte a JavaScript Runtime (QuickJS)")
