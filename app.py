@@ -1,70 +1,60 @@
 import streamlit as st
-import yt_dlp
-import requests
+import os
+import subprocess
 import re
 
-st.set_page_config(page_title="Rádio Hub v2026", page_icon="📻")
+st.set_page_config(page_title="Conversor Rádio Pro", page_icon="🔄")
 
 def limpar_nome(nome):
     return re.sub(r'[\\/*?:"<>|]', "", nome)
 
-# --- LOGIN ---
-if "autenticado" not in st.session_state:
-    st.session_state.autenticado = False
+st.title("🔄 Conversor WebA para MP3 (Rádio)")
+st.info("Se o YouTube baixou um arquivo .weba estranho, jogue ele aqui para transformar em MP3 de 320kbps.")
 
-if not st.session_state.autenticado:
-    senha = st.text_input("Senha da Rádio:", type="password")
-    if st.button("Entrar"):
-        if senha == "radio123":
-            st.session_state.autenticado = True
-            st.rerun()
-    st.stop()
+# Upload do arquivo que veio do YouTube
+arquivo_subido = st.file_uploader("Arraste o arquivo .weba ou .webm aqui", type=["weba", "webm", "m4a"])
 
-st.title("📻 Rádio Hub - Final Edition")
-
-link = st.text_input("Cole o link do YouTube:", placeholder="https://www.youtube.com/watch?v=...")
-
-if st.button("Extrair Áudio Original"):
-    if link:
-        with st.spinner("Localizando áudio e formatando nome..."):
+if arquivo_subido is not None:
+    nome_original = arquivo_subido.name
+    nome_limpo = limpar_nome(nome_original.replace(".weba", "").replace(".webm", ""))
+    
+    st.write(f"📁 Arquivo detectado: {nome_original}")
+    
+    if st.button("Transformar em MP3"):
+        with st.spinner("Convertendo... aguarde."):
+            # Salva o arquivo temporariamente no servidor
+            temp_input = "input_audio"
+            temp_output = f"{nome_limpo}.mp3"
+            
+            with open(temp_input, "wb") as f:
+                f.write(arquivo_subido.getbuffer())
+            
             try:
-                # 1. Extrair o link direto e o título usando yt-dlp
-                ydl_opts = {
-                    'format': 'bestaudio/best',
-                    'quiet': True,
-                    'nocheckcertificate': True,
-                }
+                # Usa o FFmpeg do servidor para converter de verdade
+                # -vn: sem vídeo | -ab: bitrate de 320k | -y: sobrescrever se existir
+                subprocess.run([
+                    'ffmpeg', '-i', temp_input, 
+                    '-vn', '-ar', '44100', 
+                    '-ac', '2', '-b:a', '320k', 
+                    temp_output, '-y'
+                ], check=True)
 
-                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                    info = ydl.extract_info(link, download=False)
-                    audio_url = info['url']
-                    artista = info.get('uploader', 'Artista').replace(' - Topic', '')
-                    titulo = info.get('title', 'Musica')
-                    nome_final = limpar_nome(f"{artista} - {titulo}.mp3")
-
-                # 2. Capturar os bytes do áudio pelo servidor (Proxy)
-                # Fazemos o streaming do conteúdo para não estourar a RAM
-                response = requests.get(audio_url, stream=True)
-                
-                if response.status_code == 200:
-                    st.success(f"✅ Pronto para baixar: {nome_final}")
-                    
-                    # O download_button força o navegador a salvar com o nome e extensão que definimos
+                with open(temp_output, "rb") as f:
+                    st.success("✅ Conversão concluída com sucesso!")
                     st.download_button(
-                        label="📥 BAIXAR MP3 AGORA",
-                        data=response.content, # Aqui os bytes entram no botão
-                        file_name=nome_final,
+                        label="📥 BAIXAR MP3 FINAL",
+                        data=f,
+                        file_name=f"{nome_limpo}.mp3",
                         mime="audio/mpeg"
                     )
-                else:
-                    st.error("O YouTube recusou a conexão (Erro 403).")
-
+                
+                # Limpa a sujeira
+                os.remove(temp_input)
+                os.remove(temp_output)
+                
             except Exception as e:
-                if "403" in str(e):
-                    st.error("Bloqueio de IP detectado pelo YouTube.")
-                    st.info("Dica: Tente novamente em 1 minuto ou use um link de outro vídeo.")
-                else:
-                    st.error(f"Erro: {e}")
+                st.error(f"Erro na conversão: {e}")
+                st.info("Certifique-se de que o 'ffmpeg' está no seu packages.txt")
 
 st.divider()
-st.caption("Nota: Se o download vier vazio, o YouTube bloqueou o IP do servidor definitivamente.")
+st.caption("Dica: Use aquele código anterior que gerava o link direto, baixe o arquivo e use este aqui para finalizar.")
