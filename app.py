@@ -1,88 +1,71 @@
 import streamlit as st
 import yt_dlp
-import requests
-import re
 import os
+import re
 
-# Configuração da página
-st.set_page_config(page_title="Rádio Hub v15.0", page_icon="📻", layout="wide")
+st.set_page_config(page_title="Rádio Hub v16.0", page_icon="📻")
 
 def limpar_nome(nome):
-    """Remove caracteres proibidos no Windows para evitar erro ao salvar"""
     return re.sub(r'[\\/*?:"<>|]', "", nome)
 
-# --- LOGIN SIMPLES ---
+# --- LOGIN ---
 if "autenticado" not in st.session_state:
     st.session_state.autenticado = False
 
 if not st.session_state.autenticado:
-    st.title("📻 Acesso ao Sistema de Rádio")
-    senha = st.text_input("Senha da Rádio:", type="password")
+    st.title("📻 Acesso Rádio")
+    senha = st.text_input("Senha:", type="password")
     if st.button("Entrar"):
-        if senha == "radio123": # Pode mudar a senha aqui
+        if senha == "difusora":
             st.session_state.autenticado = True
             st.rerun()
-        else:
-            st.error("Senha incorreta!")
     st.stop()
 
-# --- INTERFACE ---
-st.title("📻 Rádio Hub - Download YouTube 320kbps")
-st.info("Cole links de vídeos individuais ou playlists abaixo.")
+st.title("📻 Rádio Hub - Download Real")
 
-links_input = st.text_area("Links (um por linha):", height=150, placeholder="https://www.youtube.com/watch?v=...")
+link = st.text_input("Cole o link do YouTube:")
 
-if st.button("🚀 Iniciar Processamento"):
-    links = [l.strip() for l in links_input.split('\n') if l.strip()]
-    
-    if not links:
-        st.warning("Nenhum link detectado.")
-    else:
-        for link in links:
-            with st.status(f"Analisando: {link}", expanded=True) as status:
-                try:
-                    # Configurações otimizadas para evitar erro de JS e DRM
-                    ydl_opts = {
-                        'format': 'bestaudio/best',
-                        'quiet': True,
-                        'noplaylist': False,
-                        'extract_flat': False,
-                        'nocheckcertificate': True,
-                        'ignoreerrors': True,
-                    }
+if st.button("Preparar Download"):
+    if link:
+        with st.spinner("Baixando e convertendo... Isso pode levar alguns segundos."):
+            try:
+                # Pasta temporária para o download
+                if not os.path.exists("downloads"):
+                    os.makedirs("downloads")
+
+                # Configuração para download REAL no servidor
+                ydl_opts = {
+                    'format': 'bestaudio/best',
+                    'postprocessors': [{
+                        'key': 'FFmpegExtractAudio',
+                        'preferredcodec': 'mp3',
+                        'preferredquality': '320',
+                    }],
+                    'outtmpl': 'downloads/%(uploader)s - %(title)s.%(ext)s',
+                    'quiet': True,
+                }
+
+                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                    info = ydl.extract_info(link, download=True)
+                    # O yt-dlp nos dá o caminho exato do arquivo gerado
+                    caminho_arquivo = ydl.prepare_filename(info).replace(".webm", ".mp3").replace(".m4a", ".mp3")
                     
-                    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                        info_dict = ydl.extract_info(link, download=False)
-                        
-                        # Se for playlist, pega as entradas, se não, coloca o vídeo numa lista
-                        entries = info_dict.get('entries', [info_dict])
-                        
-                        for entry in entries:
-                            if not entry: continue
+                    if os.path.exists(caminho_arquivo):
+                        with open(caminho_arquivo, "rb") as f:
+                            bytes_musica = f.read()
+                            nome_exibicao = os.path.basename(caminho_arquivo)
                             
-                            # Identificação do nome: Artista - Título
-                            # O 'uploader' costuma ser o nome do canal/artista no YT
-                            artista = entry.get('artist') or entry.get('uploader', 'Desconhecido')
-                            artista = artista.replace(' - Topic', '') # Limpa o sufixo de canais oficiais
-                            titulo = entry.get('title', 'Musica')
-                            
-                            nome_f = limpar_nome(f"{artista} - {titulo}.mp3")
-                            
-                            st.write(f"✅ Preparado: **{nome_f}**")
-                            
-                            # Botão de download: o Streamlit puxa o arquivo do servidor do YT
-                            # e entrega direto para o navegador do PC da rádio.
+                            st.success(f"✅ Pronto: {nome_exibicao}")
                             st.download_button(
-                                label=f"Download MP3",
-                                data=requests.get(entry['url']).content,
-                                file_name=nome_f,
-                                mime="audio/mpeg",
-                                key=f"{entry['id']}_{os.urandom(4).hex()}" # Chave única para evitar conflito
+                                label="📥 SALVAR MP3 NO COMPUTADOR",
+                                data=bytes_musica,
+                                file_name=nome_exibicao,
+                                mime="audio/mpeg"
                             )
-                    status.update(label="Concluído!", state="complete")
-                    
-                except Exception as e:
-                    st.error(f"Erro no link {link}: {e}")
+                        # Limpa o arquivo do servidor para não encher o disco
+                        os.remove(caminho_arquivo)
+                    else:
+                        st.error("Erro: Arquivo não foi gerado corretamente.")
 
-st.divider()
-st.caption("v15.0 - Engine Local com suporte a JavaScript Runtime (QuickJS)")
+            except Exception as e:
+                st.error(f"Erro no processamento: {e}")
