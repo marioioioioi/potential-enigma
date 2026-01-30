@@ -3,71 +3,80 @@ import yt_dlp
 import os
 import subprocess
 import re
-import requests
+import time
 
-st.set_page_config(page_title="Rádio Hub - Renomeador", page_icon="📻")
+st.set_page_config(page_title="Rádio Hub - Multi", page_icon="📻", layout="wide")
 
 def limpar_nome(nome):
     return re.sub(r'[\\/*?:"<>|]', "", nome)
 
-aba1, aba2 = st.tabs(["📥 Download Direto", "🔄 Conversor Manual"])
+aba1, aba2 = st.tabs(["📥 Links (Download Direto)", "🔄 Conversor (Renomear e MP3)"])
 
-# --- ABA 1: DOWNLOAD COM NOME FORÇADO ---
+# --- ABA 1: MULTI LINKS ---
 with aba1:
-    st.header("Download com Nome Automático")
-    link = st.text_input("Link do YouTube:")
+    st.header("Extração de Links do YouTube")
+    links_input = st.text_area("Cole os links (um por linha):", height=100)
     
-    if st.button("Gerar Arquivo Renomeado"):
-        with st.spinner("Extraindo áudio..."):
+    if st.button("Analisar todos os links"):
+        links = [l.strip() for l in links_input.split('\n') if l.strip()]
+        for idx, link in enumerate(links):
             try:
-                ydl_opts = {'format': 'bestaudio/best', 'quiet': True}
-                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                with yt_dlp.YoutubeDL({'format': 'bestaudio/best', 'quiet': True}) as ydl:
                     info = ydl.extract_info(link, download=False)
-                    audio_url = info['url']
-                    # Monta o nome: Artista - Título
-                    artista = info.get('uploader', 'Artista').replace(' - Topic', '')
-                    titulo = info.get('title', 'Musica')
-                    nome_final = limpar_nome(f"{artista} - {titulo}.mp3")
+                    url = info['url']
+                    nome_f = limpar_nome(f"{info.get('uploader', 'Art')} - {info.get('title', 'Musica')}")
                     
-                    # O SEGREDO: Em vez de link HTML, usamos o download_button do Streamlit
-                    # com o conteúdo vindo via requests. Isso força o nome!
-                    conteudo_audio = requests.get(audio_url).content
-                    
-                    st.success(f"✅ Arquivo preparado: {nome_final}")
-                    st.download_button(
-                        label="📥 BAIXAR MP3 AGORA",
-                        data=conteudo_audio,
-                        file_name=nome_final,
-                        mime="audio/mpeg"
-                    )
+                    with st.container():
+                        col1, col2 = st.columns([3, 1])
+                        col1.write(f"🎵 {nome_f}")
+                        # Adicionamos o atributo 'download' no HTML para tentar forçar o nome no PC
+                        col2.markdown(f'''
+                            <a href="{url}" download="{nome_f}.mp3" target="_blank">
+                                <button style="width:100%; cursor:pointer; background-color:#ff4b4b; color:white; border:none; border-radius:5px; padding:5px;">
+                                    📥 Baixar
+                                </button>
+                            </a>
+                        ''', unsafe_allow_html=True)
             except Exception as e:
-                st.error(f"Erro: {e}")
-                st.info("Se der erro 403, o YouTube bloqueou este download direto.")
+                st.error(f"Erro no link {idx+1}")
 
-# --- ABA 2: CONVERSOR (SE O ACIMA FALHAR) ---
+# --- ABA 2: CONVERSOR MULTI (COM CHAVE ÚNICA) ---
 with aba2:
-    st.header("Conversor de Emergência")
-    st.write("Se o de cima der erro 403, baixe o 'videoplayback' e jogue aqui.")
+    st.header("Conversor e Renomeador em Lote")
+    st.write("Jogue os arquivos .weba aqui para virarem MP3 com nome certo.")
     
-    # Campo para o usuário digitar o nome que ele quer, caso queira mudar
-    novo_nome = st.text_input("Nome que você deseja no arquivo (opcional):")
-    arquivo_subido = st.file_uploader("Suba o arquivo 'videoplayback' aqui", type=["weba", "webm", "m4a"])
+    arquivos = st.file_uploader("Upload de arquivos", type=["weba", "webm", "m4a"], accept_multiple_files=True)
     
-    if arquivo_subido and st.button("Converter e Renomear"):
-        with st.spinner("Processando..."):
-            # Define o nome: ou o que o user digitou, ou o nome original do arquivo
-            nome_save = novo_nome if novo_nome else os.path.splitext(arquivo_subido.name)[0]
-            nome_save = limpar_nome(nome_save)
-            
-            t_in, t_out = "temp_in", f"{nome_save}.mp3"
-            with open(t_in, "wb") as f:
-                f.write(arquivo_subido.getbuffer())
-            
-            try:
-                subprocess.run(['ffmpeg', '-i', t_in, '-ab', '320k', '-y', t_out], check=True)
-                with open(t_out, "rb") as f:
-                    st.download_button(label="📥 SALVAR MP3 RENOMEADO", data=f, file_name=f"{nome_save}.mp3", mime="audio/mpeg")
-                os.remove(t_in)
-                os.remove(t_out)
-            except Exception as e:
-                st.error(f"Erro: {e}")
+    if arquivos:
+        st.divider()
+        if st.button("🚀 Converter tudo agora"):
+            for arq in arquivos:
+                # Pegamos o nome do arquivo que você subiu
+                nome_base = limpar_nome(os.path.splitext(arq.name)[0])
+                t_in = f"temp_in_{int(time.time())}_{nome_base}" # Nome temporário único
+                t_out = f"{nome_base}.mp3"
+                
+                with st.status(f"Processando: {nome_base}", expanded=False):
+                    try:
+                        with open(t_in, "wb") as f:
+                            f.write(arq.getbuffer())
+                        
+                        # Conversão via FFmpeg
+                        subprocess.run(['ffmpeg', '-i', t_in, '-ab', '320k', '-y', t_out], check=True)
+                        
+                        with open(t_out, "rb") as f:
+                            st.download_button(
+                                label=f"💾 Baixar {nome_base}.mp3", 
+                                data=f, 
+                                file_name=f"{nome_base}.mp3", 
+                                mime="audio/mpeg",
+                                key=f"btn_{nome_base}_{time.time()}" # CHAVE ÚNICA PARA NÃO DAR ERRO
+                            )
+                        
+                        if os.path.exists(t_in): os.remove(t_in)
+                        # Não removemos o t_out imediatamente para o download_button não bugar
+                    except Exception as e:
+                        st.error(f"Erro: {e}")
+
+st.divider()
+st.caption("Dica: Se o botão de baixar sumir, clique em converter novamente.")
