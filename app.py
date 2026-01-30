@@ -4,83 +4,56 @@ import os
 import subprocess
 import re
 
-st.set_page_config(page_title="Rádio Hub Premium", page_icon="📻")
+st.set_page_config(page_title="Rádio Hub Multitask", page_icon="📻", layout="wide")
 
 def limpar_nome(nome):
     return re.sub(r'[\\/*?:"<>|]', "", nome)
 
-# --- SISTEMA DE ABAS ---
-aba1, aba2 = st.tabs(["📥 Download Direto", "🔄 Conversor de Arquivo"])
+aba1, aba2 = st.tabs(["📥 Download de Links", "🔄 Conversor em Lote"])
 
-# --- ABA 1: DOWNLOAD DO YOUTUBE ---
+# --- ABA 1: MÚLTIPLOS LINKS ---
 with aba1:
-    st.header("Baixar do YouTube")
-    link = st.text_input("Cole o link aqui:", key="yt_link")
+    st.header("Extração de Links")
+    links_input = st.text_area("Cole os links do YouTube (um por linha):", height=150)
     
-    if st.button("Tentar Extração"):
-        with st.spinner("Buscando link de áudio..."):
+    if st.button("Analisar Links"):
+        links = [l.strip() for l in links_input.split('\n') if l.strip()]
+        for idx, link in enumerate(links):
             try:
-                ydl_opts = {'format': 'bestaudio/best', 'quiet': True}
-                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                with yt_dlp.YoutubeDL({'format': 'bestaudio/best', 'quiet': True}) as ydl:
                     info = ydl.extract_info(link, download=False)
-                    audio_url = info['url']
-                    nome_sugerido = limpar_nome(f"{info.get('uploader', 'Artista')} - {info.get('title', 'Musica')}")
+                    url = info['url']
+                    nome = limpar_nome(f"{info.get('uploader', 'Art')} - {info.get('title', 'Musica')}")
                     
-                    st.success("Link encontrado!")
-                    st.markdown(f"**Nome sugerido:** `{nome_sugerido}.mp3`")
-                    st.write("Se o arquivo baixar como `.weba`, use a aba ao lado para converter.")
-                    
-                    st.markdown(f'''
-                        <a href="{audio_url}" target="_blank" style="text-decoration:none;">
-                            <button style="background-color:#ff4b4b; color:white; border:none; padding:10px 20px; border-radius:5px; cursor:pointer; font-weight:bold;">
-                                📥 Baixar Arquivo Original
-                            </button>
-                        </a>
-                    ''', unsafe_allow_html=True)
+                    col1, col2 = st.columns([3, 1])
+                    col1.write(f"🎵 **{nome}**")
+                    col2.markdown(f'<a href="{url}" target="_blank"><button style="width:100%; cursor:pointer;">📥 Baixar</button></a>', unsafe_allow_html=True)
             except Exception as e:
-                st.error(f"Erro no YouTube: {e}")
+                st.error(f"Erro no link {idx+1}: {e}")
 
-# --- ABA 2: CONVERSOR (CORRIGIDO) ---
+# --- ABA 2: MÚLTIPLOS ARQUIVOS (CONVERSOR) ---
 with aba2:
-    st.header("Conversor para MP3 (320kbps)")
-    st.write("O arquivo veio em `.weba` ou sem nome? Jogue ele aqui.")
+    st.header("Conversor em Massa")
+    st.write("Arraste todos os arquivos .weba/.webm de uma vez só.")
     
-    arquivo_subido = st.file_uploader("Arraste o arquivo aqui", type=["weba", "webm", "m4a", "opus"], key="uploader")
+    arquivos = st.file_uploader("Upload de arquivos", type=["weba", "webm", "m4a", "opus"], accept_multiple_files=True)
     
-    if arquivo_subido:
-        # Pega o nome do arquivo e remove a extensão original
-        nome_base = limpar_nome(os.path.splitext(arquivo_subido.name)[0])
-        
-        if st.button("Converter Agora"):
-            with st.spinner("Transformando em MP3 Real..."):
-                temp_in = "entrada_audio"
-                temp_out = f"{nome_base}.mp3"
-                
-                # Salva o arquivo enviado pelo usuário
+    if arquivos and st.button("Converter Todos para MP3"):
+        for arq in arquivos:
+            nome_base = limpar_nome(os.path.splitext(arq.name)[0])
+            temp_in = f"in_{nome_base}"
+            temp_out = f"{nome_base}.mp3"
+            
+            with st.status(f"Convertendo {nome_base}...", expanded=False):
                 with open(temp_in, "wb") as f:
-                    f.write(arquivo_subido.getbuffer())
+                    f.write(arq.getbuffer())
                 
                 try:
-                    # Executa o FFmpeg do packages.txt
-                    # -i (input) | -ab (bitrate) | -y (overwrite)
-                    subprocess.run([
-                        'ffmpeg', '-i', temp_in, 
-                        '-vn', '-ab', '320k', '-ar', '44100', '-y', temp_out
-                    ], check=True)
-                    
+                    subprocess.run(['ffmpeg', '-i', temp_in, '-ab', '320k', '-y', temp_out], check=True)
                     with open(temp_out, "rb") as f:
-                        st.success("✅ Conversão concluída!")
-                        st.download_button(
-                            label="📥 BAIXAR MP3 FINAL",
-                            data=f,
-                            file_name=f"{nome_base}.mp3",
-                            mime="audio/mpeg"
-                        )
+                        st.download_button(label=f"💾 Salvar {nome_base}.mp3", data=f, file_name=f"{nome_base}.mp3", mime="audio/mpeg")
                     
-                    # Limpeza das variáveis corretas agora!
                     if os.path.exists(temp_in): os.remove(temp_in)
                     if os.path.exists(temp_out): os.remove(temp_out)
-                    
                 except Exception as e:
-                    st.error(f"Erro no FFmpeg: {e}")
-                    if os.path.exists(temp_in): os.remove(temp_in)
+                    st.error(f"Erro em {nome_base}: {e}")
